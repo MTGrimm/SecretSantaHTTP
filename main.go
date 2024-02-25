@@ -5,8 +5,10 @@ import (
     "encoding/json"
     "io"
     "math/rand"
-    "os"
     "net/smtp"
+    "net/http"
+    "time"
+    "log"
 )
 
 type Person struct {
@@ -79,16 +81,15 @@ func assignPeople(groups [][]Person) []Assignment {
 func sendMessage(assignment Assignment, groupIndex int, groups [][]Person) {
     auth := smtp.PlainAuth(
         "",
-        "aryan.timilsina195@gmail.com",
-        "sracqawdqrrwnooc",
+        "secretsantahttp@gmail.com",
+        "jsweurwghupgeglu",
         "smtp.gmail.com",
     )
 
     msg := "Hi " + assignment.Giver.Name + 
            "\nYour person is " + assignment.Reciever.Name +
            "\nAnd they want " + assignment.Reciever.Want + 
-           "\nAnd finally your group is: "
-
+           "\n\nAnd finally your group is: "
    for _, member := range groups[groupIndex] {
        msg += "\n" + member.Name
    }
@@ -96,8 +97,8 @@ func sendMessage(assignment Assignment, groupIndex int, groups [][]Person) {
     err := smtp.SendMail(
         "smtp.gmail.com:587",
         auth,
-        "aryan.timilsina195@gmail.com",
-        []string{"aryan.timilsina195@gmail.com"},
+        "secretsantahttp@gmail.com",
+        []string{assignment.Giver.Email},
         []byte(msg),
     )
 
@@ -106,36 +107,63 @@ func sendMessage(assignment Assignment, groupIndex int, groups [][]Person) {
     }
 }
 
-func main() {
-    info, err := os.Open("assests/info.json")
+func uploadJson(w http.ResponseWriter, r *http.Request) {
+    
+    fmt.Println(r)
+    file, _, err := r.FormFile("file")
     if err != nil {
-        fmt.Println(err)
+        http.Error(w, err.Error(), http.StatusBadRequest)
+        return
     }
-
-    defer info.Close()
-    byteValue, _ := io.ReadAll(info)
-    
-    var people []Person 
-    json.Unmarshal(byteValue, &people)
-    
-    groups := assignGroups(people, make([][]Person, 0))
-    groupMap := make(map[*Person]int)
-    for i:=0; i<len(groups); i++ {
-        fmt.Printf("\nGroup%d\n", i+1)
-        for j:=0; j<len(groups[i]); j++ {
-            fmt.Println(groups[i][j])
-            groupMap[&(groups[i][j])] = i
+    defer file.Close()
+    password := r.FormValue("password")
+    if password == "mewwycwhistmas" {
+        byteValue, err := io.ReadAll(file)
+        if err != nil {
+            http.Error(w, err.Error(), http.StatusInternalServerError)
+            return
         }
+
+        var people []Person 
+        json.Unmarshal(byteValue, &people)
+
+        groups := assignGroups(people, make([][]Person, 0))
+        groupMap := make(map[*Person]int)
+        for i:=0; i<len(groups); i++ {
+            fmt.Printf("\nGroup%d\n", i+1)
+            for j:=0; j<len(groups[i]); j++ {
+                fmt.Println(groups[i][j])
+                groupMap[&(groups[i][j])] = i
+            }
+        }
+
+        assignments := assignPeople(groups)
+        fmt.Println("\nAssignments:")
+        for i:=0; i<len(assignments); i++ {
+            fmt.Println(assignments[i].Giver.Name, assignments[i].Reciever.Name)
+            sendMessage(assignments[i], groupMap[assignments[i].Giver], groups)
+        }
+    } else {
+        fmt.Println("incorrect password lol ", password)
+    }
+}
+
+func main() {
+    m := http.NewServeMux()
+
+    const addr = ":8000"
+    
+    m.HandleFunc("/upload", uploadJson)
+
+    srv := http.Server{
+        Handler:    m,
+        Addr: addr,
+        WriteTimeout: 30 * time.Second,
+        ReadTimeout: 30 * time.Second,
     }
 
-    assignments := assignPeople(groups)
-    fmt.Println("\nAssignments:")
-    for i:=0; i<len(assignments); i++ {
-        fmt.Println(assignments[i].Giver.Name, assignments[i].Reciever.Name)
-    }
-
-    // for _, assignment := range assignments {
-    //    sendMessage(assignment, groupMap[assignment.Giver], groups)
-    // }
+    fmt.Println("Server started on port ", addr)
+    err := srv.ListenAndServe()
+    log.Fatal(err)
 }
 
